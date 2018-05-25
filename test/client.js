@@ -15,35 +15,35 @@ var tingodb = require('tingodb')({
 
 var log = require('../lib/log');
 
-var Bitcore = require('bitcore-lib');
-var BitcorePayPro = require('bitcore-payment-protocol');
+var ltcLib = require('@owstack/ltc-lib');
+var ltcPayPro = require('@owstack/ltc-payment-protocol');
 
-var BWS = require('bitcore-wallet-service');
+var LTCWS = require('@owstack/ltc-wallet-service');
 
 var Common = require('../lib/common');
 var Constants = Common.Constants;
 var Utils = Common.Utils;
 var Client = require('../lib');
-var ExpressApp = BWS.ExpressApp;
-var Storage = BWS.Storage;
+var ExpressApp = LTCWS.ExpressApp;
+var Storage = LTCWS.Storage;
 var TestData = require('./testdata');
 var ImportData = require('./legacyImportData.js');
 var Errors = require('../lib/errors');
 
 var helpers = {};
 
-helpers.toSatoshi = function(btc) {
-  if (_.isArray(btc)) {
-    return _.map(btc, helpers.toSatoshi);
+helpers.toSatoshi = function(ltc) {
+  if (_.isArray(ltc)) {
+    return _.map(ltc, helpers.toSatoshi);
   } else {
-    return parseFloat((btc * 1e8).toPrecision(12));
+    return parseFloat((ltc * 1e8).toPrecision(12));
   }
 };
 
 helpers.newClient = function(app) {
   $.checkArgument(app);
   return new Client({
-    baseUrl: '/bws/api',
+    baseUrl: '/ltcws/api',
     request: request(app),
   });
 };
@@ -77,21 +77,21 @@ helpers.generateUtxos = function(scriptType, publicKeyRing, path, requiredSignat
   var amounts = [].concat(amounts);
   var utxos = _.map(amounts, function(amount, i) {
 
-    var address = Utils.deriveAddress(scriptType, publicKeyRing, path, requiredSignatures, 'testnet');
+    var address = Utils.deriveAddress(scriptType, publicKeyRing, path, requiredSignatures, Constants.TESTNET);
 
     var scriptPubKey;
     switch (scriptType) {
       case Constants.SCRIPT_TYPES.P2SH:
-        scriptPubKey = Bitcore.Script.buildMultisigOut(address.publicKeys, requiredSignatures).toScriptHashOut();
+        scriptPubKey = ltcLib.Script.buildMultisigOut(address.publicKeys, requiredSignatures).toScriptHashOut();
         break;
       case Constants.SCRIPT_TYPES.P2PKH:
-        scriptPubKey = Bitcore.Script.buildPublicKeyHashOut(address.address);
+        scriptPubKey = ltcLib.Script.buildPublicKeyHashOut(address.address);
         break;
     }
     should.exist(scriptPubKey);
 
     var obj = {
-      txid: Bitcore.crypto.Hash.sha256(new Buffer(i)).toString('hex'),
+      txid: ltcLib.crypto.Hash.sha256(new Buffer(i)).toString('hex'),
       vout: 100,
       satoshis: helpers.toSatoshi(amount),
       scriptPubKey: scriptPubKey.toBuffer().toString('hex'),
@@ -113,10 +113,10 @@ helpers.createAndJoinWallet = function(clients, m, n, opts, cb) {
   opts = opts || {};
 
   clients[0].seedFromRandomWithMnemonic({
-    network: 'testnet'
+    network: opts.network || Constants.TESTNET
   });
   clients[0].createWallet('mywallet', 'creator', m, n, {
-    network: 'testnet',
+    network: opts.network || Constants.TESTNET,
     singleAddress: !!opts.singleAddress,
   }, function(err, secret) {
     should.not.exist(err);
@@ -130,7 +130,7 @@ helpers.createAndJoinWallet = function(clients, m, n, opts, cb) {
         function(next) {
           async.each(_.range(1, n), function(i, cb) {
             clients[i].seedFromRandomWithMnemonic({
-              network: 'testnet'
+              network: Constants.TESTNET
             });
             clients[i].joinWallet(secret, 'copayer ' + i, {}, cb);
           }, next);
@@ -194,15 +194,15 @@ blockchainExplorerMock.setUtxo = function(address, amount, m, confirmations) {
   var scriptPubKey;
   switch (address.type) {
     case Constants.SCRIPT_TYPES.P2SH:
-      scriptPubKey = address.publicKeys ? Bitcore.Script.buildMultisigOut(address.publicKeys, m).toScriptHashOut() : '';
+      scriptPubKey = address.publicKeys ? ltcLib.Script.buildMultisigOut(address.publicKeys, m).toScriptHashOut() : '';
       break;
     case Constants.SCRIPT_TYPES.P2PKH:
-      scriptPubKey = Bitcore.Script.buildPublicKeyHashOut(address.address);
+      scriptPubKey = ltcLib.Script.buildPublicKeyHashOut(address.address);
       break;
   }
   should.exist(scriptPubKey);
   blockchainExplorerMock.utxos.push({
-    txid: Bitcore.crypto.Hash.sha256(new Buffer(Math.random() * 100000)).toString('hex'),
+    txid: ltcLib.crypto.Hash.sha256(new Buffer(Math.random() * 100000)).toString('hex'),
     vout: Math.floor((Math.random() * 10) + 1),
     amount: amount,
     address: address.address,
@@ -213,7 +213,7 @@ blockchainExplorerMock.setUtxo = function(address, amount, m, confirmations) {
 
 blockchainExplorerMock.broadcast = function(raw, cb) {
   blockchainExplorerMock.lastBroadcasted = raw;
-  return cb(null, (new Bitcore.Transaction(raw)).id);
+  return cb(null, (new ltcLib.Transaction(raw)).id);
 };
 
 blockchainExplorerMock.setHistory = function(txs) {
@@ -231,7 +231,7 @@ blockchainExplorerMock.getTransactions = function(addresses, from, to, cb) {
 };
 
 blockchainExplorerMock.getAddressActivity = function(address, cb) {
-  var activeAddresses = _.pluck(blockchainExplorerMock.utxos || [], 'address');
+  var activeAddresses = _.map(blockchainExplorerMock.utxos || [], 'address');
   return cb(null, _.includes(activeAddresses, address));
 };
 
@@ -281,7 +281,7 @@ describe('client API', function() {
         blockchainExplorerMock.reset();
         sandbox = sinon.sandbox.create();
 
-        if (!process.env.BWC_SHOW_LOGS) {
+        if (!process.env.LTCWC_SHOW_LOGS) {
           sandbox.stub(log, 'warn');
           sandbox.stub(log, 'info');
           sandbox.stub(log, 'error');
@@ -327,9 +327,9 @@ describe('client API', function() {
   });
 
   describe('Client Internals', function() {
-    it('should expose bitcore', function() {
-      should.exist(Client.Bitcore);
-      should.exist(Client.Bitcore.HDPublicKey);
+    it('should expose ltc', function() {
+      should.exist(Client.ltcLib);
+      should.exist(Client.ltcLib.HDPublicKey);
     });
   });
 
@@ -359,7 +359,7 @@ describe('client API', function() {
         var client = helpers.newClient(app);
         client.storage = s2;
         client.createWallet('1', '2', 1, 1, {
-            network: 'testnet'
+            network: Constants.TESTNET
           },
           function(err) {
             err.should.be.an.instanceOf(Error);
@@ -387,7 +387,7 @@ describe('client API', function() {
         var client = helpers.newClient(app);
         client.storage = s2;
         client.createWallet('1', '2', 1, 1, {
-            network: 'testnet'
+            network: Constants.TESTNET
           },
           function(err) {
             err.should.be.an.instanceOf(Error);
@@ -415,7 +415,7 @@ describe('client API', function() {
         var client = helpers.newClient(app);
         client.storage = s2;
         client.createWallet('1', '2', 1, 1, {
-            network: 'testnet'
+            network: Constants.TESTNET
           },
           function(err) {
             err.should.be.an.instanceOf(Errors.NOT_FOUND);
@@ -438,7 +438,7 @@ describe('client API', function() {
     it('should handle critical errors (Case5)', function(done) {
       clients[0].request = helpers.stubRequest('some error');
       clients[0].createWallet('mywallet', 'creator', 1, 2, {
-        network: 'testnet'
+        network: Constants.TESTNET
       }, function(err, secret) {
         should.exist(err);
         err.should.be.an.instanceOf(Errors.CONNECTION_ERROR);
@@ -475,9 +475,9 @@ describe('client API', function() {
   describe('Build & sign txs', function() {
     var masterPrivateKey = 'tprv8ZgxMBicQKsPd8U9aBBJ5J2v8XMwKwZvf8qcu2gLK5FRrsrPeSgkEcNHqKx4zwv6cP536m68q2UD7wVM24zdSCpaJRmpowaeJTeVMXL5v5k';
     var derivedPrivateKey = {
-      'BIP44': new Bitcore.HDPrivateKey(masterPrivateKey).deriveChild("m/44'/1'/0'").toString(),
-      'BIP45': new Bitcore.HDPrivateKey(masterPrivateKey).deriveChild("m/45'").toString(),
-      'BIP48': new Bitcore.HDPrivateKey(masterPrivateKey).deriveChild("m/48'/1'/0'").toString(),
+      'BIP44': new ltcLib.HDPrivateKey(masterPrivateKey).deriveChild("m/44'/1'/0'").toString(),
+      'BIP45': new ltcLib.HDPrivateKey(masterPrivateKey).deriveChild("m/45'").toString(),
+      'BIP48': new ltcLib.HDPrivateKey(masterPrivateKey).deriveChild("m/48'/1'/0'").toString(),
     };
 
     describe('#buildTx', function() {
@@ -486,7 +486,7 @@ describe('client API', function() {
         var changeAddress = 'msj42CCGruhRsFrGATiUuh25dtxYtnpbTx';
 
         var publicKeyRing = [{
-          xPubKey: new Bitcore.HDPublicKey(derivedPrivateKey['BIP44']),
+          xPubKey: new ltcLib.HDPublicKey(derivedPrivateKey['BIP44']),
         }];
 
         var utxos = helpers.generateUtxos('P2PKH', publicKeyRing, 'm/1/0', 1, [1000, 2000]);
@@ -509,7 +509,7 @@ describe('client API', function() {
         _.isString(t).should.be.true;
         /^[\da-f]+$/.test(t).should.be.true;
 
-        var t2 = new Bitcore.Transaction(t);
+        var t2 = new ltcLib.Transaction(t);
         t2.inputs.length.should.equal(2);
         t2.outputs.length.should.equal(2);
         t2.outputs[0].satoshis.should.equal(1200);
@@ -519,7 +519,7 @@ describe('client API', function() {
         var changeAddress = 'msj42CCGruhRsFrGATiUuh25dtxYtnpbTx';
 
         var publicKeyRing = [{
-          xPubKey: new Bitcore.HDPublicKey(derivedPrivateKey['BIP44']),
+          xPubKey: new ltcLib.HDPublicKey(derivedPrivateKey['BIP44']),
         }];
 
         var utxos = helpers.generateUtxos('P2PKH', publicKeyRing, 'm/1/0', 1, [1000, 2000]);
@@ -538,13 +538,13 @@ describe('client API', function() {
           addressType: 'P2PKH',
         };
         var t = Utils.buildTx(txp);
-        var bitcoreError = t.getSerializationError({
+        var ltcError = t.getSerializationError({
           disableIsFullySigned: true,
           disableSmallFees: true,
           disableLargeFees: true,
         });
 
-        should.not.exist(bitcoreError);
+        should.not.exist(ltcError);
         t.getFee().should.equal(10050);
       });
       it('should build a tx correctly (BIP48)', function() {
@@ -552,7 +552,7 @@ describe('client API', function() {
         var changeAddress = 'msj42CCGruhRsFrGATiUuh25dtxYtnpbTx';
 
         var publicKeyRing = [{
-          xPubKey: new Bitcore.HDPublicKey(derivedPrivateKey['BIP48']),
+          xPubKey: new ltcLib.HDPublicKey(derivedPrivateKey['BIP48']),
         }];
 
         var utxos = helpers.generateUtxos('P2PKH', publicKeyRing, 'm/1/0', 1, [1000, 2000]);
@@ -571,13 +571,13 @@ describe('client API', function() {
           addressType: 'P2PKH',
         };
         var t = Utils.buildTx(txp);
-        var bitcoreError = t.getSerializationError({
+        var ltcError = t.getSerializationError({
           disableIsFullySigned: true,
           disableSmallFees: true,
           disableLargeFees: true,
         });
 
-        should.not.exist(bitcoreError);
+        should.not.exist(ltcError);
         t.getFee().should.equal(10050);
       });
       it('should protect from creating excessive fee', function() {
@@ -585,7 +585,7 @@ describe('client API', function() {
         var changeAddress = 'msj42CCGruhRsFrGATiUuh25dtxYtnpbTx';
 
         var publicKeyRing = [{
-          xPubKey: new Bitcore.HDPublicKey(derivedPrivateKey['BIP44']),
+          xPubKey: new ltcLib.HDPublicKey(derivedPrivateKey['BIP44']),
         }];
 
         var utxos = helpers.generateUtxos('P2PKH', publicKeyRing, 'm/1/0', 1, [1, 2]);
@@ -603,9 +603,9 @@ describe('client API', function() {
           addressType: 'P2PKH',
         };
 
-        var x = Utils.newBitcoreTransaction;
+        var x = Utils.newLtcTransaction;
 
-        Utils.newBitcoreTransaction = function() {
+        Utils.newLtcTransaction = function() {
           return {
             from: sinon.stub(),
             to: sinon.stub(),
@@ -621,14 +621,14 @@ describe('client API', function() {
           var t = Utils.buildTx(txp);
         }).should.throw('Illegal State');
 
-        Utils.newBitcoreTransaction = x;
+        Utils.newLtcTransaction = x;
       });
       it('should build a tx with multiple outputs', function() {
         var toAddress = 'msj42CCGruhRsFrGATiUuh25dtxYtnpbTx';
         var changeAddress = 'msj42CCGruhRsFrGATiUuh25dtxYtnpbTx';
 
         var publicKeyRing = [{
-          xPubKey: new Bitcore.HDPublicKey(derivedPrivateKey['BIP44']),
+          xPubKey: new ltcLib.HDPublicKey(derivedPrivateKey['BIP44']),
         }];
 
         var utxos = helpers.generateUtxos('P2PKH', publicKeyRing, 'm/1/0', 1, [1000, 2000]);
@@ -653,17 +653,17 @@ describe('client API', function() {
           addressType: 'P2PKH',
         };
         var t = Utils.buildTx(txp);
-        var bitcoreError = t.getSerializationError({
+        var ltcError = t.getSerializationError({
           disableIsFullySigned: true,
         });
-        should.not.exist(bitcoreError);
+        should.not.exist(ltcError);
       });
       it('should build a tx with provided output scripts', function() {
         var toAddress = 'msj42CCGruhRsFrGATiUuh25dtxYtnpbTx';
         var changeAddress = 'msj42CCGruhRsFrGATiUuh25dtxYtnpbTx';
 
         var publicKeyRing = [{
-          xPubKey: new Bitcore.HDPublicKey(derivedPrivateKey['BIP44']),
+          xPubKey: new ltcLib.HDPublicKey(derivedPrivateKey['BIP44']),
         }];
 
         var utxos = helpers.generateUtxos('P2PKH', publicKeyRing, 'm/1/0', 1, [0.001]);
@@ -691,10 +691,10 @@ describe('client API', function() {
           addressType: 'P2PKH',
         };
         var t = Utils.buildTx(txp);
-        var bitcoreError = t.getSerializationError({
+        var ltcError = t.getSerializationError({
           disableIsFullySigned: true,
         });
-        should.not.exist(bitcoreError);
+        should.not.exist(ltcError);
         t.outputs.length.should.equal(4);
         t.outputs[0].script.toHex().should.equal(txp.outputs[0].script);
         t.outputs[0].satoshis.should.equal(txp.outputs[0].amount);
@@ -702,7 +702,7 @@ describe('client API', function() {
         t.outputs[1].satoshis.should.equal(txp.outputs[1].amount);
         t.outputs[2].script.toHex().should.equal(txp.outputs[2].script);
         t.outputs[2].satoshis.should.equal(txp.outputs[2].amount);
-        var changeScript = Bitcore.Script.fromAddress(txp.changeAddress.address).toHex();
+        var changeScript = ltcLib.Script.fromAddress(txp.changeAddress.address).toHex();
         t.outputs[3].script.toHex().should.equal(changeScript);
       });
       it('should fail if provided output has no either toAddress or script', function() {
@@ -710,7 +710,7 @@ describe('client API', function() {
         var changeAddress = 'msj42CCGruhRsFrGATiUuh25dtxYtnpbTx';
 
         var publicKeyRing = [{
-          xPubKey: new Bitcore.HDPublicKey(derivedPrivateKey['BIP44']),
+          xPubKey: new ltcLib.HDPublicKey(derivedPrivateKey['BIP44']),
         }];
 
         var utxos = helpers.generateUtxos('P2PKH', publicKeyRing, 'm/1/0', 1, [0.001]);
@@ -741,25 +741,25 @@ describe('client API', function() {
 
         txp.outputs[0].toAddress = "18433T2TSgajt9jWhcTBw4GoNREA6LpX3E";
         var t = Utils.buildTx(txp);
-        var bitcoreError = t.getSerializationError({
+        var ltcError = t.getSerializationError({
           disableIsFullySigned: true,
         });
-        should.not.exist(bitcoreError);
+        should.not.exist(ltcError);
 
         delete txp.outputs[0].toAddress;
         txp.outputs[0].script = "512103ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff210314a96cd6f5a20826070173fe5b7e9797f21fc8ca4a55bcb2d2bde99f55dd352352ae";
         t = Utils.buildTx(txp);
-        var bitcoreError = t.getSerializationError({
+        var ltcError = t.getSerializationError({
           disableIsFullySigned: true,
         });
-        should.not.exist(bitcoreError);
+        should.not.exist(ltcError);
       });
       it('should build a v3 tx proposal', function() {
         var toAddress = 'msj42CCGruhRsFrGATiUuh25dtxYtnpbTx';
         var changeAddress = 'msj42CCGruhRsFrGATiUuh25dtxYtnpbTx';
 
         var publicKeyRing = [{
-          xPubKey: new Bitcore.HDPublicKey(derivedPrivateKey['BIP44']),
+          xPubKey: new ltcLib.HDPublicKey(derivedPrivateKey['BIP44']),
         }];
 
         var utxos = helpers.generateUtxos('P2PKH', publicKeyRing, 'm/1/0', 1, [1000, 2000]);
@@ -785,10 +785,10 @@ describe('client API', function() {
           addressType: 'P2PKH',
         };
         var t = Utils.buildTx(txp);
-        var bitcoreError = t.getSerializationError({
+        var ltcError = t.getSerializationError({
           disableIsFullySigned: true,
         });
-        should.not.exist(bitcoreError);
+        should.not.exist(ltcError);
       });
     });
 
@@ -798,7 +798,7 @@ describe('client API', function() {
         var changeAddress = 'msj42CCGruhRsFrGATiUuh25dtxYtnpbTx';
 
         var publicKeyRing = [{
-          xPubKey: new Bitcore.HDPublicKey(derivedPrivateKey['BIP45']),
+          xPubKey: new ltcLib.HDPublicKey(derivedPrivateKey['BIP45']),
         }];
 
         var utxos = helpers.generateUtxos('P2SH', publicKeyRing, 'm/2147483647/0/0', 1, [1000, 2000]);
@@ -823,7 +823,7 @@ describe('client API', function() {
         var changeAddress = 'msj42CCGruhRsFrGATiUuh25dtxYtnpbTx';
 
         var publicKeyRing = [{
-          xPubKey: new Bitcore.HDPublicKey(derivedPrivateKey['BIP44']),
+          xPubKey: new ltcLib.HDPublicKey(derivedPrivateKey['BIP44']),
         }];
 
         var utxos = helpers.generateUtxos('P2PKH', publicKeyRing, 'm/1/0', 1, [1000, 2000]);
@@ -848,7 +848,7 @@ describe('client API', function() {
         var changeAddress = 'msj42CCGruhRsFrGATiUuh25dtxYtnpbTx';
 
         var publicKeyRing = [{
-          xPubKey: new Bitcore.HDPublicKey(derivedPrivateKey['BIP44']),
+          xPubKey: new ltcLib.HDPublicKey(derivedPrivateKey['BIP44']),
         }];
 
         var utxos = helpers.generateUtxos('P2PKH', publicKeyRing, 'm/1/0', 1, [1000, 2000]);
@@ -880,7 +880,7 @@ describe('client API', function() {
         var changeAddress = 'msj42CCGruhRsFrGATiUuh25dtxYtnpbTx';
 
         var publicKeyRing = [{
-          xPubKey: new Bitcore.HDPublicKey(derivedPrivateKey['BIP44']),
+          xPubKey: new ltcLib.HDPublicKey(derivedPrivateKey['BIP44']),
         }];
 
         var utxos = helpers.generateUtxos('P2PKH', publicKeyRing, 'm/1/0', 1, [0.001]);
@@ -914,7 +914,7 @@ describe('client API', function() {
         var changeAddress = 'msj42CCGruhRsFrGATiUuh25dtxYtnpbTx';
 
         var publicKeyRing = [{
-          xPubKey: new Bitcore.HDPublicKey(derivedPrivateKey['BIP44']),
+          xPubKey: new ltcLib.HDPublicKey(derivedPrivateKey['BIP44']),
         }];
 
         var utxos = helpers.generateUtxos('P2PKH', publicKeyRing, 'm/1/0', 1, [1000, 2000]);
@@ -950,8 +950,8 @@ describe('client API', function() {
       var i = 0;
       while (i++ < 100) {
         var walletId = Uuid.v4();
-        var walletPrivKey = new Bitcore.PrivateKey();
-        var network = i % 2 == 0 ? 'testnet' : 'livenet';
+        var walletPrivKey = new ltcLib.PrivateKey();
+        var network = i % 2 == 0 ? Constants.TESTNET : Constants.LIVENET;
         var secret = Client._buildSecret(walletId, walletPrivKey, network);
         var result = Client.parseSecret(secret);
         result.walletId.should.equal(walletId);
@@ -967,8 +967,8 @@ describe('client API', function() {
 
     it('should create secret and parse secret from string ', function() {
       var walletId = Uuid.v4();
-      var walletPrivKey = new Bitcore.PrivateKey();
-      var network = 'testnet';
+      var walletPrivKey = new ltcLib.PrivateKey();
+      var network = Constants.TESTNET;
       var secret = Client._buildSecret(walletId, walletPrivKey.toString(), network);
       var result = Client.parseSecret(secret);
       result.walletId.should.equal(walletId);
@@ -993,7 +993,7 @@ describe('client API', function() {
 
         var notifications = [];
         clients[0]._fetchLatestNotifications(5, function() {
-          _.pluck(notifications, 'type').should.deep.equal(['NewCopayer', 'WalletComplete']);
+          _.map(notifications, 'type').should.deep.equal(['NewCopayer', 'WalletComplete']);
           clock.tick(2000);
           notifications = [];
           clients[0]._fetchLatestNotifications(5, function() {
@@ -1002,7 +1002,7 @@ describe('client API', function() {
             clients[1].createAddress(function(err, x) {
               should.not.exist(err);
               clients[0]._fetchLatestNotifications(5, function() {
-                _.pluck(notifications, 'type').should.deep.equal(['NewAddress']);
+                _.map(notifications, 'type').should.deep.equal(['NewAddress']);
                 clock.tick(2000);
                 notifications = [];
                 clients[0]._fetchLatestNotifications(5, function() {
@@ -1068,13 +1068,13 @@ describe('client API', function() {
     });
     it('should be able to access wallet name in non-encrypted wallet (legacy)', function(done) {
       clients[0].seedFromRandomWithMnemonic();
-      var wpk = new Bitcore.PrivateKey();
+      var wpk = new ltcLib.PrivateKey();
       var args = {
         name: 'mywallet',
         m: 1,
         n: 1,
         pubKey: wpk.toPublicKey().toString(),
-        network: 'livenet',
+        network: Constants.LIVENET,
         id: '123',
       };
       clients[0]._doPostRequest('/v2/wallets/', args, function(err, wallet) {
@@ -1144,7 +1144,7 @@ describe('client API', function() {
         if (++checks == 2) done();
       });
       clients[0].createWallet('mywallet', 'creator', 2, 2, {
-        network: 'testnet'
+        network: Constants.TESTNET
       }, function(err, secret) {
         should.not.exist(err);
         clients[0].isComplete().should.equal(false);
@@ -1155,7 +1155,7 @@ describe('client API', function() {
           clients[0].openWallet(function(err, walletStatus) {
             should.not.exist(err);
             should.exist(walletStatus);
-            _.difference(_.pluck(walletStatus.copayers, 'name'), ['creator', 'guest']).length.should.equal(0);
+            _.difference(_.map(walletStatus.copayers, 'name'), ['creator', 'guest']).length.should.equal(0);
             if (++checks == 2) done();
           });
         });
@@ -1179,7 +1179,7 @@ describe('client API', function() {
 
     it('should return wallet on successful join', function(done) {
       clients[0].createWallet('mywallet', 'creator', 2, 2, {
-        network: 'testnet'
+        network: Constants.TESTNET
       }, function(err, secret) {
         should.not.exist(err);
         clients[1].joinWallet(secret, 'guest', {}, function(err, wallet) {
@@ -1194,7 +1194,7 @@ describe('client API', function() {
 
     it('should not allow to join wallet on bogus device', function(done) {
       clients[0].createWallet('mywallet', 'creator', 2, 2, {
-        network: 'testnet'
+        network: Constants.TESTNET
       }, function(err, secret) {
         should.not.exist(err);
         clients[1].keyDerivationOk = false;
@@ -1275,7 +1275,7 @@ describe('client API', function() {
       helpers.createAndJoinWallet(clients, 2, 3, function() {
         helpers.tamperResponse([clients[0], clients[1]], 'get', '/v1/wallets/', {}, function(status) {
           // Replace caller's pubkey
-          status.wallet.copayers[1].xPubKey = (new Bitcore.HDPrivateKey()).publicKey;
+          status.wallet.copayers[1].xPubKey = (new ltcLib.HDPrivateKey()).publicKey;
           // Add a correct signature
           status.wallet.copayers[1].xPubKeySignature = Utils.signMessage(
             status.wallet.copayers[1].xPubKey.toString(),
@@ -1308,7 +1308,7 @@ describe('client API', function() {
 
     it('should return wallet status even if wallet is not yet complete', function(done) {
       clients[0].createWallet('mywallet', 'creator', 1, 2, {
-        network: 'testnet'
+        network: Constants.TESTNET
       }, function(err, secret) {
         should.not.exist(err);
         should.exist(secret);
@@ -1325,7 +1325,7 @@ describe('client API', function() {
     });
     it('should return status using v2 version', function(done) {
       clients[0].createWallet('mywallet', 'creator', 1, 1, {
-        network: 'testnet'
+        network: Constants.TESTNET
       }, function(err, secret) {
         should.not.exist(err);
         clients[0].getStatus({}, function(err, status) {
@@ -1338,7 +1338,7 @@ describe('client API', function() {
     });
     it('should return extended status using v2 version', function(done) {
       clients[0].createWallet('mywallet', 'creator', 1, 1, {
-        network: 'testnet'
+        network: Constants.TESTNET
       }, function(err, secret) {
         should.not.exist(err);
         clients[0].getStatus({
@@ -1354,7 +1354,7 @@ describe('client API', function() {
 
     it('should store walletPrivKey', function(done) {
       clients[0].createWallet('mywallet', 'creator', 1, 1, {
-        network: 'testnet'
+        network: Constants.TESTNET
       }, function(err) {
 
         var key = clients[0].credentials.walletPrivKey;
@@ -1372,9 +1372,9 @@ describe('client API', function() {
       });
     });
 
-    it('should set walletPrivKey from BWS', function(done) {
+    it('should set walletPrivKey from LTCWS', function(done) {
       clients[0].createWallet('mywallet', 'creator', 1, 1, {
-        network: 'testnet'
+        network: Constants.TESTNET
       }, function(err) {
 
         var wkey = clients[0].credentials.walletPrivKey;
@@ -1411,14 +1411,14 @@ describe('client API', function() {
     it('should create a 1-1 wallet with random mnemonic', function(done) {
       clients[0].seedFromRandomWithMnemonic();
       clients[0].createWallet('mywallet', 'creator', 1, 1, {
-          network: 'livenet'
+          network: Constants.LIVENET
         },
         function(err) {
           should.not.exist(err);
           clients[0].openWallet(function(err) {
             should.not.exist(err);
             should.not.exist(err);
-            clients[0].credentials.network.should.equal('livenet');
+            clients[0].credentials.network.should.equal(Constants.LIVENET);
             clients[0].getMnemonic().split(' ').length.should.equal(12);
             done();
           });
@@ -1429,7 +1429,7 @@ describe('client API', function() {
       var words = 'forget announce travel fury farm alpha chaos choice talent sting eagle supreme';
       clients[0].seedFromMnemonic(words);
       clients[0].createWallet('mywallet', 'creator', 1, 1, {
-          network: 'livenet',
+          network: Constants.LIVENET,
           derivationStrategy: 'BIP48',
         },
         function(err) {
@@ -1448,7 +1448,7 @@ describe('client API', function() {
       var words = 'forget announce travel fury farm alpha chaos choice talent sting eagle supreme';
       clients[0].seedFromMnemonic(words);
       clients[0].createWallet('mywallet', 'creator', 2, 3, {
-          network: 'livenet'
+          network: Constants.LIVENET
         },
         function(err, secret) {
           should.not.exist(err);
@@ -1540,7 +1540,7 @@ describe('client API', function() {
         clients[0].getUtxos(opts, function(err, utxos) {
           should.not.exist(err);
           utxos.length.should.equal(2);
-          _.sum(utxos, 'satoshis').should.equal(2 * 1e8);
+          _.sumBy(utxos, 'satoshis').should.equal(2 * 1e8);
           done();
         });
       });
@@ -1555,27 +1555,27 @@ describe('client API', function() {
         10: 18000,
       });
       clients[0].credentials = {};
-      clients[0].getFeeLevels('livenet', function(err, levels) {
+      clients[0].getFeeLevels(Constants.LIVENET, function(err, levels) {
         should.not.exist(err);
         should.exist(levels);
-        _.difference(['priority', 'normal', 'economy'], _.pluck(levels, 'level')).should.be.empty;
+        _.difference(['priority', 'normal', 'economy'], _.map(levels, 'level')).should.be.empty;
         done();
       });
     });
   });
 
   describe('Version', function() {
-    it('should get version of bws', function(done) {
+    it('should get version of ltcws', function(done) {
       clients[0].credentials = {};
       clients[0].getVersion(function(err, version) {
         if (err) {
-          // if bws is older version without getVersion support
+          // if ltcws is older version without getVersion support
           err.should.be.an.instanceOf(Errors.NOT_FOUND);
         } else {
-          // if bws is up-to-date
+          // if ltcws is up-to-date
           should.exist(version);
           should.exist(version.serviceVersion);
-          version.serviceVersion.should.contain('bws-');
+          version.serviceVersion.should.contain('ltcws-');
         }
         done();
       });
@@ -1910,7 +1910,7 @@ describe('client API', function() {
       clients[0].getNotifications({}, function(err, notifications) {
         should.not.exist(err);
         notifications.length.should.equal(3);
-        _.pluck(notifications, 'type').should.deep.equal(['NewCopayer', 'WalletComplete', 'NewAddress']);
+        _.map(notifications, 'type').should.deep.equal(['NewCopayer', 'WalletComplete', 'NewAddress']);
         clients[0].getNotifications({
           lastNotificationId: _.last(notifications).id
         }, function(err, notifications) {
@@ -1932,13 +1932,13 @@ describe('client API', function() {
       clients[0].getNotifications({}, function(err, notifications) {
         should.not.exist(err);
         notifications.length.should.equal(3);
-        _.pluck(notifications, 'type').should.deep.equal(['NewCopayer', 'WalletComplete', 'NewAddress']);
+        _.map(notifications, 'type').should.deep.equal(['NewCopayer', 'WalletComplete', 'NewAddress']);
         clients[0].getNotifications({
           includeOwn: true,
         }, function(err, notifications) {
           should.not.exist(err);
           notifications.length.should.equal(5);
-          _.pluck(notifications, 'type').should.deep.equal(['NewCopayer', 'NewCopayer', 'WalletComplete', 'NewAddress', 'NewAddress']);
+          _.map(notifications, 'type').should.deep.equal(['NewCopayer', 'NewCopayer', 'WalletComplete', 'NewAddress', 'NewAddress']);
           done();
         });
       });
@@ -1989,10 +1989,10 @@ describe('client API', function() {
         txp.status.should.equal('temporary');
         txp.message.should.equal('hello');
         txp.outputs.length.should.equal(2);
-        _.sum(txp.outputs, 'amount').should.equal(3e8);
+        _.sumBy(txp.outputs, 'amount').should.equal(3e8);
         txp.outputs[0].message.should.equal('world');
-        _.uniq(txp.outputs, 'toAddress').length.should.equal(1);
-        _.uniq(_.pluck(txp.outputs, 'toAddress'))[0].should.equal(toAddress);
+        _.uniqBy(txp.outputs, 'toAddress').length.should.equal(1);
+        _.uniq(_.map(txp.outputs, 'toAddress'))[0].should.equal(toAddress);
         txp.hasUnconfirmedInputs.should.equal(false);
         txp.feeLevel.should.equal('normal');
         txp.feePerKb.should.equal(123e2);
@@ -2472,7 +2472,61 @@ describe('client API', function() {
         });
       });
     });
+  });
 
+  describe('Transaction Proposal signing', function() {
+    this.timeout(5000);
+    function setup(m, n, network, cb) {
+      helpers.createAndJoinWallet(clients, m, n, {
+        network: network,
+      }, function(w) {
+        clients[0].createAddress(function(err, address) {
+          should.not.exist(err);
+          blockchainExplorerMock.setUtxo(address, 2, 2);
+          blockchainExplorerMock.setUtxo(address, 2, 2);
+          blockchainExplorerMock.setUtxo(address, 1, 2, 0);
+          cb();
+        });
+      });
+    };
+
+    beforeEach(function(done) {
+      setup(2, 3, 'testnet', done);
+    });
+
+    it('Should sign proposal', function(done) {
+      var toAddress = 'n2TBMPzPECGUfcT2EByiTJ12TPZkhN2mN5';
+      var opts = {
+        outputs: [{
+          amount: 1e8,
+          toAddress: toAddress,
+        }, {
+          amount: 2e8,
+          toAddress: toAddress,
+        }],
+        feePerKb: 100e2,
+        message: 'just some message'
+      };
+      clients[0].createTxProposal(opts, function(err, txp) {
+        should.not.exist(err);
+        should.exist(txp);
+        clients[0].publishTxProposal({
+          txp: txp,
+        }, function(err, publishedTxp) {
+          should.not.exist(err);
+          should.exist(publishedTxp);
+          publishedTxp.status.should.equal('pending');
+          clients[0].signTxProposal(publishedTxp, function(err, txp) {
+            should.not.exist(err);
+            clients[1].signTxProposal(publishedTxp, function(err, txp) {
+              should.not.exist(err);
+              txp.status.should.equal('accepted');
+              done();
+            });
+          });
+        });
+      });
+    });
     it('Should sign proposal with no change', function(done) {
       var toAddress = 'n2TBMPzPECGUfcT2EByiTJ12TPZkhN2mN5';
       var opts = {
@@ -2674,8 +2728,8 @@ describe('client API', function() {
               clients[1].broadcastTxProposal(yy, function(err, zz, memo) {
                 should.not.exist(err);
                 var args = http.lastCall.args[0];
-                var data = BitcorePayPro.Payment.decode(args.body);
-                var pay = new BitcorePayPro();
+                var data = ltcPayPro.Payment.decode(args.body);
+                var pay = new ltcPayPro();
                 var p = pay.makePayment(data);
                 var refund_to = p.get('refund_to');
                 refund_to.length.should.equal(1);
@@ -2686,8 +2740,8 @@ describe('client API', function() {
                 amount.low.should.equal(404500);
                 amount.high.should.equal(0);
                 var s = refund_to.get('script');
-                s = new Bitcore.Script(s.buffer.slice(s.offset, s.limit));
-                var addr = new Bitcore.Address.fromScript(s, 'testnet');
+                s = new ltcLib.Script(s.buffer.slice(s.offset, s.limit));
+                var addr = new ltcLib.Address.fromScript(s, Constants.TESTNET);
                 addr.toString().should.equal(changeAddress);
                 done();
               });
@@ -2711,11 +2765,11 @@ describe('client API', function() {
 
                 should.not.exist(err);
                 var args = http.lastCall.args[0];
-                var data = BitcorePayPro.Payment.decode(args.body);
-                var pay = new BitcorePayPro();
+                var data = ltcPayPro.Payment.decode(args.body);
+                var pay = new ltcPayPro();
                 var p = pay.makePayment(data);
                 var rawTx = p.get('transactions')[0].toBuffer();
-                var tx = new Bitcore.Transaction(rawTx);
+                var tx = new ltcLib.Transaction(rawTx);
                 var script = tx.inputs[0].script;
                 script.isScriptHashIn().should.equal(true);
                 done();
@@ -2768,8 +2822,8 @@ describe('client API', function() {
             clients[0].broadcastTxProposal(xx, function(err, zz, memo) {
               should.not.exist(err);
               var args = http.lastCall.args[0];
-              var data = BitcorePayPro.Payment.decode(args.body);
-              var pay = new BitcorePayPro();
+              var data = ltcPayPro.Payment.decode(args.body);
+              var pay = new ltcPayPro();
               var p = pay.makePayment(data);
               var refund_to = p.get('refund_to');
               refund_to.length.should.equal(1);
@@ -2780,8 +2834,8 @@ describe('client API', function() {
               amount.low.should.equal(404500);
               amount.high.should.equal(0);
               var s = refund_to.get('script');
-              s = new Bitcore.Script(s.buffer.slice(s.offset, s.limit));
-              var addr = new Bitcore.Address.fromScript(s, 'testnet');
+              s = new ltcLib.Script(s.buffer.slice(s.offset, s.limit));
+              var addr = new ltcLib.Address.fromScript(s, Constants.TESTNET);
               addr.toString().should.equal(changeAddress);
               done();
             });
@@ -2801,11 +2855,11 @@ describe('client API', function() {
             clients[0].broadcastTxProposal(xx, function(err, zz, memo) {
               should.not.exist(err);
               var args = http.lastCall.args[0];
-              var data = BitcorePayPro.Payment.decode(args.body);
-              var pay = new BitcorePayPro();
+              var data = ltcPayPro.Payment.decode(args.body);
+              var pay = new ltcPayPro();
               var p = pay.makePayment(data);
               var rawTx = p.get('transactions')[0].toBuffer();
-              var tx = new Bitcore.Transaction(rawTx);
+              var tx = new ltcLib.Transaction(rawTx);
               var script = tx.inputs[0].script;
               script.isPublicKeyHashIn().should.equal(true);
               done();
@@ -2954,7 +3008,7 @@ describe('client API', function() {
               clients[0].broadcastTxProposal(txp, function(err, txp) {
                 should.not.exist(err);
                 txp.status.should.equal('broadcasted');
-                txp.txid.should.equal((new Bitcore.Transaction(blockchainExplorerMock.lastBroadcasted)).id);
+                txp.txid.should.equal((new ltcLib.Transaction(blockchainExplorerMock.lastBroadcasted)).id);
                 done();
               });
             } else {
@@ -3019,7 +3073,7 @@ describe('client API', function() {
               clients[0].broadcastTxProposal(txp, function(err, txp) {
                 should.not.exist(err);
                 txp.status.should.equal('broadcasted');
-                txp.txid.should.equal((new Bitcore.Transaction(blockchainExplorerMock.lastBroadcasted)).id);
+                txp.txid.should.equal((new ltcLib.Transaction(blockchainExplorerMock.lastBroadcasted)).id);
                 txp.outputs[0].message.should.equal('output 0');
                 txp.message.should.equal('hello');
                 done();
@@ -3092,7 +3146,7 @@ describe('client API', function() {
                   txp.status.should.equal('accepted');
                   clients[1].broadcastTxProposal(txp, function(err, txp) {
                     txp.status.should.equal('broadcasted');
-                    txp.txid.should.equal((new Bitcore.Transaction(blockchainExplorerMock.lastBroadcasted)).id);
+                    txp.txid.should.equal((new ltcLib.Transaction(blockchainExplorerMock.lastBroadcasted)).id);
                     done();
                   });
                 });
@@ -3155,7 +3209,7 @@ describe('client API', function() {
                   txp.status.should.equal('accepted');
                   clients[2].broadcastTxProposal(txp, function(err, txp) {
                     txp.status.should.equal('broadcasted');
-                    txp.txid.should.equal((new Bitcore.Transaction(blockchainExplorerMock.lastBroadcasted)).id);
+                    txp.txid.should.equal((new ltcLib.Transaction(blockchainExplorerMock.lastBroadcasted)).id);
                     done();
                   });
                 });
@@ -3243,7 +3297,7 @@ describe('client API', function() {
     it('should broadcast raw tx', function(done) {
       helpers.createAndJoinWallet(clients, 1, 1, function(w) {
         var opts = {
-          network: 'testnet',
+          network: Constants.TESTNET,
           rawTx: '0100000001b1b1b1b0d9786e237ec6a4b80049df9e926563fee7bdbc1ac3c4efc3d0af9a1c010000006a47304402207c612d36d0132ed463526a4b2370de60b0aa08e76b6f370067e7915c2c74179b02206ae8e3c6c84cee0bca8521704eddb40afe4590f14fd5d6434da980787ba3d5110121031be732b984b0f1f404840f2479bcc81f90187298efecc67dd83e1f93d9b2860dfeffffff0200ab9041000000001976a91403383bd4cff200de3690db1ed17d0b1a228ea43f88ac25ad6ed6190000001976a9147ccbaf7bcc1e323548bd1d57d7db03f6e6daf76a88acaec70700',
         };
         clients[0].broadcastRawTx(opts, function(err, txid) {
@@ -3283,6 +3337,7 @@ describe('client API', function() {
       });
     });
     it('should get transaction history decorated with proposal & notes', function(done) {
+      this.timeout(5000);
       async.waterfall([
 
         function(next) {
@@ -3400,7 +3455,7 @@ describe('client API', function() {
             clients[0].getTxHistory(testCase.opts, function(err, txs) {
               should.not.exist(err);
               should.exist(txs);
-              var times = _.pluck(txs, 'time');
+              var times = _.map(txs, 'time');
               times.should.deep.equal(testCase.expected);
               next();
             });
@@ -3521,7 +3576,7 @@ describe('client API', function() {
           }, function(err, notes) {
             should.not.exist(err);
             notes.length.should.equal(2);
-            _.difference(_.pluck(notes, 'txid'), ['123', '456']).should.be.empty;
+            _.difference(_.map(notes, 'txid'), ['123', '456']).should.be.empty;
             next();
           });
         },
@@ -3657,7 +3712,7 @@ describe('client API', function() {
           should.exist(err);
         });
 
-        it('should export & import with mnemonics + BWS', function(done) {
+        it('should export & import with mnemonics + LTCWS', function(done) {
           var c = clients[0].credentials;
           var walletId = c.walletId;
           var walletName = c.walletName;
@@ -3679,7 +3734,7 @@ describe('client API', function() {
           });
         });
 
-        it('should export & import with xprivkey + BWS', function(done) {
+        it('should export & import with xprivkey + LTCWS', function(done) {
           var c = clients[0].credentials;
           var walletId = c.walletId;
           var walletName = c.walletName;
@@ -3704,7 +3759,7 @@ describe('client API', function() {
       describe('Non-compliant derivation', function() {
         function setup(done) {
           clients[0].createWallet('mywallet', 'creator', 1, 1, {
-            network: 'livenet'
+            network: Constants.LIVENET
           }, function(err) {
             should.not.exist(err);
             clients[0].createAddress(function(err, addr) {
@@ -3728,9 +3783,9 @@ describe('client API', function() {
             done();
           });
         });
-        it('should export & import with mnemonics + BWS', function(done) {
+        it('should export & import with mnemonics + LTCWS', function(done) {
           clients[0].seedFromMnemonic('pink net pet stove boy receive task nephew book spawn pull regret', {
-            network: 'livenet',
+            network: Constants.LIVENET,
             nonCompliantDerivation: true,
           });
           clients[0].credentials.xPrivKey.toString().should.equal('xprv9s21ZrQH143K3E71Wm5nrxuMdqCTMG6AM5Xyp4dJ3ZkUj2gEpfifT5Hc1cfqnycKooRpzoH4gjmAKDmGGaH2k2cSe29EcQSarveq6STBZZW');
@@ -3739,7 +3794,7 @@ describe('client API', function() {
             importedClient = helpers.newClient(app);
             var spy = sinon.spy(importedClient, 'openWallet');
             importedClient.importFromMnemonic(clients[0].getMnemonic(), {
-              network: 'livenet',
+              network: Constants.LIVENET,
             }, function(err) {
               should.not.exist(err);
               spy.getCalls().length.should.equal(2);
@@ -3748,14 +3803,14 @@ describe('client API', function() {
           });
         });
 
-        it('should check BWS once if specific derivation is not problematic', function(done) {
+        it('should check LTCWS once if specific derivation is not problematic', function(done) {
           clients[0].seedFromMnemonic('relax about label gentle insect cross summer helmet come price elephant seek', {
-            network: 'livenet',
+            network: Constants.LIVENET,
           });
           importedClient = helpers.newClient(app);
           var spy = sinon.spy(importedClient, 'openWallet');
           importedClient.importFromMnemonic(clients[0].getMnemonic(), {
-            network: 'livenet',
+            network: Constants.LIVENET,
           }, function(err) {
             should.exist(err);
             err.should.be.an.instanceOf(Errors.NOT_AUTHORIZED);
@@ -3764,14 +3819,14 @@ describe('client API', function() {
             done();
           });
         });
-        it('should export & import with xprivkey + BWS', function(done) {
+        it('should export & import with xprivkey + LTCWS', function(done) {
           clients[0].seedFromMnemonic('relax about label gentle insect cross summer helmet come price elephant seek', {
-            network: 'livenet',
+            network: Constants.LIVENET,
           });
           importedClient = helpers.newClient(app);
           var spy = sinon.spy(importedClient, 'openWallet');
           importedClient.importFromExtendedPrivateKey(clients[0].getKeys().xPrivKey, {
-            network: 'livenet',
+            network: Constants.LIVENET,
           }, function(err) {
             should.exist(err);
             err.should.be.an.instanceOf(Errors.NOT_AUTHORIZED);
@@ -3823,7 +3878,7 @@ describe('client API', function() {
         client.seedFromRandomWithMnemonic();
         var exported = client.getMnemonic();
         client.createWallet('mywallet', 'creator', 1, 1, {
-          network: 'livenet'
+          network: Constants.LIVENET
         }, function(err) {
           should.not.exist(err);
           var c = client.credentials;
@@ -3831,7 +3886,7 @@ describe('client API', function() {
           importedClient.importFromMnemonic(exported, {}, function(err) {
             should.not.exist(err);
             var c2 = importedClient.credentials;
-            c2.network.should.equal('livenet');
+            c2.network.should.equal(Constants.LIVENET);
             c2.xPubKey.should.equal(client.credentials.xPubKey);
             c2.personalEncryptingKey.should.equal(c.personalEncryptingKey);
             c2.walletId.should.equal(c.walletId);
@@ -3842,11 +3897,11 @@ describe('client API', function() {
         });
       });
       // Generated with https://dcpos.github.io/bip39/
-      it('should fail to import from words if not at BWS', function(done) {
+      it('should fail to import from words if not at LTCWS', function(done) {
         var exported = 'bounce tonight little spy earn void nominee ankle walk ten type update';
         importedClient = helpers.newClient(app);
         importedClient.importFromMnemonic(exported, {
-          network: 'testnet',
+          network: Constants.TESTNET,
         }, function(err) {
           err.should.be.an.instanceOf(Errors.NOT_AUTHORIZED);
           importedClient.mnemonicHasPassphrase().should.equal(false);
@@ -3854,11 +3909,11 @@ describe('client API', function() {
           done();
         });
       });
-      it('should fail to import from words if not at BWS, with passphrase', function(done) {
+      it('should fail to import from words if not at LTCWS, with passphrase', function(done) {
         var exported = 'bounce tonight little spy earn void nominee ankle walk ten type update';
         importedClient = helpers.newClient(app);
         importedClient.importFromMnemonic(exported, {
-          network: 'testnet',
+          network: Constants.TESTNET,
           passphrase: 'hola',
         }, function(err) {
           err.should.be.an.instanceOf(Errors.NOT_AUTHORIZED);
@@ -3972,7 +4027,7 @@ describe('client API', function() {
                   recoveryClient.getStatus({}, function(err, status) {
                     should.not.exist(err);
                     status.wallet.name.should.equal('mywallet');
-                    _.difference(_.pluck(status.wallet.copayers, 'name'), ['creator', 'copayer 1']).length.should.equal(0);
+                    _.difference(_.map(status.wallet.copayers, 'name'), ['creator', 'copayer 1']).length.should.equal(0);
                     recoveryClient.createAddress(function(err, addr2) {
                       should.not.exist(err);
                       should.exist(addr2);
@@ -4083,7 +4138,7 @@ describe('client API', function() {
                       should.not.exist(err);
                       recoveryClient.getStatus({}, function(err, status) {
                         should.not.exist(err);
-                        _.difference(_.pluck(status.wallet.copayers, 'name'), ['creator', 'copayer 1']).length.should.equal(0);
+                        _.difference(_.map(status.wallet.copayers, 'name'), ['creator', 'copayer 1']).length.should.equal(0);
                         recoveryClient.createAddress(function(err, addr2) {
                           should.not.exist(err);
                           should.exist(addr2);
@@ -4112,7 +4167,7 @@ describe('client API', function() {
           derivationStrategy: 'BIP48',
         });
         clients[0].createWallet('mywallet', 'creator', 1, 1, {
-          network: 'testnet'
+          network: Constants.TESTNET
         }, function(err, secret) {
           should.not.exist(err);
 
@@ -4166,7 +4221,7 @@ describe('client API', function() {
     it('should create wallet in proxy from airgapped', function(done) {
       var airgapped = new Client();
       airgapped.seedFromRandom({
-        network: 'testnet'
+        network: Constants.TESTNET
       });
       var exported = airgapped.export({
         noSign: true
@@ -4178,7 +4233,7 @@ describe('client API', function() {
 
       var seedSpy = sinon.spy(proxy, 'seedFromRandom');
       proxy.createWallet('mywallet', 'creator', 1, 1, {
-        network: 'testnet'
+        network: Constants.TESTNET
       }, function(err) {
         should.not.exist(err);
         seedSpy.called.should.be.false;
@@ -4192,7 +4247,7 @@ describe('client API', function() {
     it('should fail to create wallet in proxy from airgapped when networks do not match', function(done) {
       var airgapped = new Client();
       airgapped.seedFromRandom({
-        network: 'testnet'
+        network: Constants.TESTNET
       });
       var exported = airgapped.export({
         noSign: true
@@ -4205,7 +4260,7 @@ describe('client API', function() {
       var seedSpy = sinon.spy(proxy, 'seedFromRandom');
       should.not.exist(proxy.credentials.xPrivKey);
       proxy.createWallet('mywallet', 'creator', 1, 1, {
-        network: 'livenet'
+        network: Constants.LIVENET
       }, function(err) {
         should.exist(err);
         err.message.should.equal('Existing keys were created for a different network');
@@ -4215,7 +4270,7 @@ describe('client API', function() {
     it('should be able to sign from airgapped client and broadcast from proxy', function(done) {
       var airgapped = new Client();
       airgapped.seedFromRandom({
-        network: 'testnet'
+        network: Constants.TESTNET
       });
       var exported = airgapped.export({
         noSign: true
@@ -4229,7 +4284,7 @@ describe('client API', function() {
 
           function(next) {
             proxy.createWallet('mywallet', 'creator', 1, 1, {
-              network: 'testnet'
+              network: Constants.TESTNET
             }, function(err) {
               should.not.exist(err);
               proxy.createAddress(function(err, address) {
@@ -4293,7 +4348,7 @@ describe('client API', function() {
     it('should be able to sign from airgapped client with mnemonics (with unencrypted xpubkey ring)', function(done) {
       var client = helpers.newClient(app);
       client.seedFromRandomWithMnemonic({
-        network: 'testnet',
+        network: Constants.TESTNET,
         passphrase: 'passphrase',
       });
 
@@ -4305,7 +4360,7 @@ describe('client API', function() {
 
           function(next) {
             client.createWallet('mywallet', 'creator', 1, 1, {
-              network: 'testnet'
+              network: Constants.TESTNET
             }, function(err) {
               should.not.exist(err);
               client.createAddress(function(err, address) {
@@ -4369,7 +4424,7 @@ describe('client API', function() {
       beforeEach(function(done) {
         airgapped = new Client();
         airgapped.seedFromRandom({
-          network: 'testnet'
+          network: Constants.TESTNET
         });
         var exported = airgapped.export({
           noSign: true
@@ -4383,7 +4438,7 @@ describe('client API', function() {
 
             function(next) {
               proxy.createWallet('mywallet', 'creator', 1, 1, {
-                network: 'testnet'
+                network: Constants.TESTNET
               }, function(err) {
                 should.not.exist(err);
                 proxy.createAddress(function(err, address) {
@@ -4618,7 +4673,7 @@ describe('client API', function() {
         c2.createWalletFromOldCopay(t2.username, t2.password, t2.ls[w], function(err) {
           should.not.exist(err);
 
-          // New BWS server...
+          // New LTCWS server...
           var storage = new Storage({
             db: helpers.newDb(),
           });
@@ -4638,14 +4693,14 @@ describe('client API', function() {
             should.not.exist(err);
             recoveryClient.getStatus({}, function(err, status) {
               should.not.exist(err);
-              _.pluck(status.wallet.copayers, 'name').sort().should.deep.equal(['123', '234', '345']);
+              _.map(status.wallet.copayers, 'name').sort().should.deep.equal(['123', '234', '345']);
               var t2 = ImportData.copayers[1];
               var c2p = helpers.newClient(newApp);
               c2p.createWalletFromOldCopay(t2.username, t2.password, t2.ls[w], function(err) {
                 should.not.exist(err);
                 c2p.getStatus({}, function(err, status) {
                   should.not.exist(err);
-                  _.pluck(status.wallet.copayers, 'name').sort().should.deep.equal(['123', '234', '345']);
+                  _.map(status.wallet.copayers, 'name').sort().should.deep.equal(['123', '234', '345']);
                   done();
                 });
               });
@@ -4664,10 +4719,10 @@ describe('client API', function() {
     beforeEach(function(done) {
       c1 = clients[1];
       clients[1].seedFromRandomWithMnemonic({
-        network: 'testnet'
+        network: Constants.TESTNET
       });
       clients[1].createWallet('mywallet', 'creator', 1, 1, {
-        network: 'testnet',
+        network: Constants.TESTNET,
       }, function() {
         clients[1].encryptPrivateKey(password);
         done();
@@ -4702,7 +4757,7 @@ describe('client API', function() {
     it('should prevent to encrypt airgapped\'s proxy credentials', function() {
       var airgapped = new Client();
       airgapped.seedFromRandom({
-        network: 'testnet'
+        network: Constants.TESTNET
       });
       var exported = airgapped.export({
         noSign: true
@@ -4837,7 +4892,7 @@ describe('client API', function() {
             var c = clients[0].credentials;
 
             // Ggenerate a new priv key, not registered
-            var k = new Bitcore.PrivateKey();
+            var k = new ltcLib.PrivateKey();
             c.requestPrivKey = k.toString();
             c.requestPubKey = k.toPublicKey().toString();
             done();
@@ -4872,7 +4927,7 @@ describe('client API', function() {
           url.should.contain('/copayers');
           body.should.not.contain('pepe');
 
-          var k = new Bitcore.PrivateKey(key);
+          var k = new ltcLib.PrivateKey(key);
           var c = clients[0].credentials;
           c.requestPrivKey = k.toString();
           c.requestPubKey = k.toPublicKey().toString();
@@ -4909,7 +4964,7 @@ describe('client API', function() {
         clients[0].addAccess({
           generateNewKey: true
         }, function(err, x, key) {
-          var k = new Bitcore.PrivateKey(key);
+          var k = new ltcLib.PrivateKey(key);
           var c = clients[0].credentials;
           c.requestPrivKey = k.toString();
           c.requestPubKey = k.toPublicKey().toString();
@@ -5028,7 +5083,7 @@ describe('client API', function() {
           tx.outputs.length.should.equal(1);
           var output = tx.outputs[0];
           output.satoshis.should.equal(123 * 1e8 - 10000);
-          var script = new Bitcore.Script.buildPublicKeyHashOut(Bitcore.Address.fromString('1GG3JQikGC7wxstyavUBDoCJ66bWLLENZC'));
+          var script = new ltcLib.Script.buildPublicKeyHashOut(ltcLib.Address.fromString('1GG3JQikGC7wxstyavUBDoCJ66bWLLENZC'));
           output.script.toString('hex').should.equal(script.toString('hex'));
           done();
         });
@@ -5038,7 +5093,7 @@ describe('client API', function() {
     it('should handle tx serialization error when building tx', function(done) {
       var sandbox = sinon.sandbox.create();
 
-      var se = sandbox.stub(Bitcore.Transaction.prototype, 'serialize', function() {
+      var se = sandbox.stub(ltcLib.Transaction.prototype, 'serialize', function() {
         throw new Error('this is an error');
       });
 
@@ -5079,23 +5134,23 @@ describe('client API', function() {
   describe('#formatAmount', function() {
     it('should successfully format amount', function() {
       var cases = [{
-        args: [1, 'bit'],
+        args: [1, 'photon'],
         expected: '0',
       }, {
-        args: [1, 'bit', {
+        args: [1, 'photon', {
           fullPrecision: true
         }],
         expected: '0.01',
       }, {
-        args: [1, 'btc'],
+        args: [1, 'ltc'],
         expected: '0.00',
       }, {
-        args: [1, 'btc', {
+        args: [1, 'ltc', {
           fullPrecision: true
         }],
         expected: '0.00000001',
       }, {
-        args: [1234567899999, 'btc', {
+        args: [1234567899999, 'ltc', {
           thousandsSeparator: ' ',
           decimalSeparator: ','
         }],
@@ -5230,7 +5285,7 @@ describe('client API', function() {
       var client = helpers.newClient(app);
       client.seedFromExtendedPublicKey('xpub661MyMwAqRbcGVyYUcHbZi9KNhN9Tdj8qHi9ZdoUXP1VeKiXDGGrE9tSoJKYhGFE2rimteYdwvoP6e87zS5LsgcEvsvdrpPBEmeWz9EeAUq', 'ledger', '1a1f001a1f001a1f001a1f001a1f001a1f001a1f001a1f001a1f001a1f001a1f001a1f001a1f001a1f001a1f001a1f001a1f001a1f001a1f001a1f001a1f001a1f001a1f001a1f001a1f001a1f001a1f001a1f001a1f001a1f001a1f001a1f00');
       client.createWallet('mywallet', 'creator', 1, 1, {
-        network: 'livenet'
+        network: Constants.LIVENET
       }, function(err) {
         should.not.exist(err);
         var c = client.credentials;

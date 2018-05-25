@@ -4,7 +4,7 @@ var _ = require('lodash');
 var chai = require('chai');
 var sinon = require('sinon');
 var should = chai.should();
-var Bitcore = require('bitcore-lib');
+var ltcLib = require('@owstack/ltc-lib');
 
 var Utils = require('../lib/common/utils');
 
@@ -55,56 +55,56 @@ describe('Utils', function() {
   describe('#formatAmount', function() {
     it('should successfully format short amount', function() {
       var cases = [{
-        args: [1, 'bit'],
+        args: [1, 'photon'],
         expected: '0',
       }, {
-        args: [1, 'btc'],
+        args: [1, 'ltc'],
         expected: '0.00',
       }, {
-        args: [400050000, 'btc'],
+        args: [400050000, 'ltc'],
         expected: '4.0005',
       }, {
-        args: [400000000, 'btc'],
+        args: [400000000, 'ltc'],
         expected: '4.00',
       }, {
-        args: [49999, 'btc'],
+        args: [49999, 'ltc'],
         expected: '0.000499',
       }, {
-        args: [100000000, 'btc'],
+        args: [100000000, 'ltc'],
         expected: '1.00',
       }, {
-        args: [0, 'bit'],
+        args: [0, 'photon'],
         expected: '0',
       }, {
-        args: [12345678, 'bit'],
+        args: [12345678, 'photon'],
         expected: '123,456',
       }, {
-        args: [12345678, 'btc'],
+        args: [12345678, 'ltc'],
         expected: '0.123456',
       }, {
-        args: [12345611, 'btc'],
+        args: [12345611, 'ltc'],
         expected: '0.123456',
       }, {
-        args: [1234, 'btc'],
+        args: [1234, 'ltc'],
         expected: '0.000012',
       }, {
-        args: [1299, 'btc'],
+        args: [1299, 'ltc'],
         expected: '0.000012',
       }, {
-        args: [1234567899999, 'btc'],
+        args: [1234567899999, 'ltc'],
         expected: '12,345.678999',
       }, {
-        args: [12345678, 'bit', {
+        args: [12345678, 'photon', {
           thousandsSeparator: '.'
         }],
         expected: '123.456',
       }, {
-        args: [12345678, 'btc', {
+        args: [12345678, 'ltc', {
           decimalSeparator: ','
         }],
         expected: '0,123456',
       }, {
-        args: [1234567899999, 'btc', {
+        args: [1234567899999, 'ltc', {
           thousandsSeparator: ' ',
           decimalSeparator: ','
         }],
@@ -117,47 +117,47 @@ describe('Utils', function() {
     });
     it('should successfully format full amount', function() {
       var cases = [{
-        args: [1, 'bit'],
+        args: [1, 'photon'],
         expected: '0.01',
       }, {
-        args: [1, 'btc'],
+        args: [1, 'ltc'],
         expected: '0.00000001',
       }, {
-        args: [0, 'bit'],
+        args: [0, 'photon'],
         expected: '0.00',
       }, {
-        args: [12345678, 'bit'],
+        args: [12345678, 'photon'],
         expected: '123,456.78',
       }, {
-        args: [12345678, 'btc'],
+        args: [12345678, 'ltc'],
         expected: '0.12345678',
       }, {
-        args: [1234567, 'btc'],
+        args: [1234567, 'ltc'],
         expected: '0.01234567',
       }, {
-        args: [12345611, 'btc'],
+        args: [12345611, 'ltc'],
         expected: '0.12345611',
       }, {
-        args: [1234, 'btc'],
+        args: [1234, 'ltc'],
         expected: '0.00001234',
       }, {
-        args: [1299, 'btc'],
+        args: [1299, 'ltc'],
         expected: '0.00001299',
       }, {
-        args: [1234567899999, 'btc'],
+        args: [1234567899999, 'ltc'],
         expected: '12,345.67899999',
       }, {
-        args: [12345678, 'bit', {
+        args: [12345678, 'photon', {
           thousandsSeparator: "'"
         }],
         expected: "123'456.78",
       }, {
-        args: [12345678, 'btc', {
+        args: [12345678, 'ltc', {
           decimalSeparator: ','
         }],
         expected: '0,12345678',
       }, {
-        args: [1234567899999, 'btc', {
+        args: [1234567899999, 'ltc', {
           thousandsSeparator: ' ',
           decimalSeparator: ','
         }],
@@ -226,14 +226,14 @@ describe('Utils', function() {
 
   describe('#privateKeyToAESKey', function() {
     it('should be ok', function() {
-      var privKey = new Bitcore.PrivateKey('09458c090a69a38368975fb68115df2f4b0ab7d1bc463fc60c67aa1730641d6c').toString();
+      var privKey = new ltcLib.PrivateKey('09458c090a69a38368975fb68115df2f4b0ab7d1bc463fc60c67aa1730641d6c').toString();
       Utils.privateKeyToAESKey(privKey).should.be.equal('2HvmUYBSD0gXLea6z0n7EQ==');
     });
     it('should fail if pk has invalid values', function() {
       var values = [
         null,
         123,
-        '123',
+        'x123',
       ];
       _.each(values, function(value) {
         var valid = true;
@@ -249,9 +249,9 @@ describe('Utils', function() {
 
   describe('#verifyRequestPubKey', function() {
     it('should generate and check request pub key', function() {
-      var reqPubKey = (new Bitcore.PrivateKey).toPublicKey();
-      var xPrivKey = new Bitcore.HDPrivateKey();
-      var xPubKey = new Bitcore.HDPublicKey(xPrivKey);
+      var reqPubKey = (new ltcLib.PrivateKey).toPublicKey();
+      var xPrivKey = new ltcLib.HDPrivateKey();
+      var xPubKey = new ltcLib.HDPublicKey(xPrivKey);
 
 
       var sig = Utils.signRequestPubKey(reqPubKey.toString(), xPrivKey);
@@ -261,12 +261,12 @@ describe('Utils', function() {
 
     it('should fail to check a request pub key with wrong key', function() {
       var reqPubKey = '02c2c1c6e75cfc50235ff4a2eb848385c2871b8c94e285ee82eaced1dcd5dd568e';
-      var xPrivKey = new Bitcore.HDPrivateKey();
-      var xPubKey = new Bitcore.HDPublicKey(xPrivKey);
+      var xPrivKey = new ltcLib.HDPrivateKey();
+      var xPubKey = new ltcLib.HDPublicKey(xPrivKey);
       var sig = Utils.signRequestPubKey(reqPubKey, xPrivKey);
 
-      var xPrivKey2 = new Bitcore.HDPrivateKey();
-      var xPubKey2 = new Bitcore.HDPublicKey(xPrivKey2);
+      var xPrivKey2 = new ltcLib.HDPrivateKey();
+      var xPubKey2 = new ltcLib.HDPublicKey(xPrivKey2);
       var valid = Utils.verifyRequestPubKey(reqPubKey, sig, xPubKey2);
       valid.should.be.equal(false);
     });

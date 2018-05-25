@@ -1,41 +1,44 @@
-# bitcore-wallet-client
+Ltc Wallet Client
+======
 
-[![NPM Package](https://img.shields.io/npm/v/bitcore-wallet-client.svg?style=flat-square)](https://www.npmjs.org/package/bitcore-wallet-client)
-[![Build Status](https://img.shields.io/travis/bitpay/bitcore-wallet-client.svg?branch=master&style=flat-square)](https://travis-ci.org/bitpay/bitcore-wallet-client) 
-[![Coverage Status](https://coveralls.io/repos/bitpay/bitcore-wallet-client/badge.svg)](https://coveralls.io/r/bitpay/bitcore-wallet-client)
+[![NPM Package](https://img.shields.io/npm/v/ltc-wallet-client.svg?style=flat-square)](https://www.npmjs.org/package/ltc-wallet-client)
+[![Build Status](https://img.shields.io/travis/owstack/ltc-wallet-client.svg?branch=master&style=flat-square)](https://travis-ci.org/owstack/ltc-wallet-client) 
+[![Coverage Status](https://coveralls.io/repos/owstack/ltc-wallet-client/badge.svg)](https://coveralls.io/r/owstack/ltc-wallet-client)
 
-The *official* client library for [bitcore-wallet-service] (https://github.com/bitpay/bitcore-wallet-service). 
+The *official* client library for [ltc-wallet-service](https://github.com/owstack/ltc-wallet-service).
+
+## Attribution
+
+This repository was created by copy forking [bitcore-wallet-client commit d986bbb](https://github.com/bitpay/bitcore-wallet-client/commit/d986bbb69d01be56f1cfd09c89625f587de2bc02).
 
 ## Description
 
-This package communicates with BWS [Bitcore wallet service](https://github.com/bitpay/bitcore-wallet-service) using the REST API. All REST endpoints are wrapped as simple async methods. All relevant responses from BWS are checked independently by the peers, thus the importance of using this library when talking to a third party BWS instance.
-
-See [Bitcore-wallet] (https://github.com/bitpay/bitcore-wallet) for a simple CLI wallet implementation that relays on BWS and uses bitcore-wallet-client.
+This package communicates with LTCWS [Ltc wallet service](https://github.com/owstack/ltc-wallet-service) using the REST API. All REST endpoints are wrapped as simple async methods. All relevant responses from LTCWS are checked independently by the peers, thus the importance of using this library when talking to a third party LTCWS instance.
 
 ## Get Started
 
-You can start using bitcore-wallet-client in any of these two ways:
+You can start using ltc-wallet-client in any of these two ways:
 
-* via [Bower](http://bower.io/): by running `bower install bitcore-wallet-client` from your console
-* or via [NPM](https://www.npmjs.com/package/bitcore-wallet-client): by running `npm install bitcore-wallet-client` from your console.
+* via [Bower](http://bower.io/): by running `bower install ltc-wallet-client` from your console
+* or via [NPM](https://www.npmjs.com/package/ltc-wallet-client): by running `npm install ltc-wallet-client` from your console.
 
 ## Example
 
-Start your own local [Bitcore wallet service](https://github.com/bitpay/bitcore-wallet-service) instance. In this example we assume you have `bitcore-wallet-service` running on your `localhost:3232`.
+Start your own local [Ltc wallet service](https://github.com/owstack/ltc-wallet-service) instance. In this example we assume you have `ltc-wallet-service` running on your `localhost:3232`.
 
 Then create two files `irene.js` and `tomas.js` with the content below:
 
 **irene.js**
 
 ``` javascript
-var Client = require('bitcore-wallet-client');
+var Client = require('@owstack/ltc-wallet-client');
 
 
 var fs = require('fs');
-var BWS_INSTANCE_URL = 'https://bws.bitpay.com/bws/api'
+var LTCWS_INSTANCE_URL = 'https://ltcws.openwalletstack.com/ltcws/api'
 
 var client = new Client({
-  baseUrl: BWS_INSTANCE_URL,
+  baseUrl: LTCWS_INSTANCE_URL,
   verbose: false,
 });
 
@@ -54,11 +57,11 @@ client.createWallet("My Wallet", "Irene", 2, 2, {network: 'testnet'}, function(e
 
 ``` javascript
 
-var Client = require('bitcore-wallet-client');
+var Client = require('@owstack/ltc-wallet-client');
 
 
 var fs = require('fs');
-var BWS_INSTANCE_URL = 'https://bws.bitpay.com/bws/api'
+var LTCWS_INSTANCE_URL = 'https://ltcws.openwalletstack.com/ltcws/api'
 
 var secret = process.argv[2];
 if (!secret) {
@@ -68,7 +71,7 @@ if (!secret) {
 }
 
 var client = new Client({
-  baseUrl: BWS_INSTANCE_URL,
+  baseUrl: LTCWS_INSTANCE_URL,
   verbose: false,
 });
 
@@ -104,10 +107,10 @@ client.joinWallet(secret, "Tomas", {}, function(err, wallet) {
 });
 ```
 
-Install `bitcore-wallet-client` before start:
+Install `ltc-wallet-client` before start:
 
 ```
-npm i bitcore-wallet-client
+npm i @owstack/ltc-wallet-client
 ```
 
 Create a new wallet with the first script:
